@@ -26,6 +26,10 @@ def parse_args(argv=None):
         help="режим тестового репозитория: --repo задаёт путь к файлу",
     )
     parser.add_argument(
+        "--reverse", action="store_true",
+        help="вывести обратные зависимости (кто зависит от пакета)",
+    )
+    parser.add_argument(
         "--ascii-tree", action="store_true",
         help="вывести зависимости в формате ASCII-дерева",
     )

@@ -70,6 +70,68 @@ class RealModeTest(unittest.TestCase):
         self.assertIn("Ошибка:", err)
 
 
+class ReverseModeTest(unittest.TestCase):
+    """Проверки режима обратных зависимостей (--reverse)."""
+
+    def run_reverse(self, package, filename):
+        """Запускает main с --reverse в тестовом режиме."""
+        argv = ["--package", package, "--repo", data_file(filename),
+                "--test-mode", "--reverse"]
+        return run_main(argv)
+
+    def test_real_mode(self):
+        """В режиме Alpine выводятся пакеты, зависящие от musl."""
+        argv = ["--package", "musl", "--repo", URL, "--reverse"]
+        code, out, _ = run_main(argv, graph=GRAPH)
+        self.assertEqual(code, EXIT_OK)
+        self.assertEqual(out, (
+            "Обратные зависимости пакета musl: 2\n"
+            "  nginx\n  pcre2\n"
+            "Циклические зависимости: нет\n"
+        ))
+
+    def test_diamond(self):
+        """От D зависят B, A и C (транзитивно)."""
+        code, out, _ = self.run_reverse("D", "graph_simple.txt")
+        self.assertEqual(code, EXIT_OK)
+        self.assertEqual(out, (
+            "Обратные зависимости пакета D: 3\n"
+            "  B\n  A\n  C\n"
+            "Циклические зависимости: нет\n"
+        ))
+
+    def test_nobody_depends(self):
+        """От A никто не зависит."""
+        code, out, _ = self.run_reverse("A", "graph_simple.txt")
+        self.assertEqual(code, EXIT_OK)
+        self.assertIn("пакета A: 0", out)
+
+    def test_cycle(self):
+        """Цикл в обратном графе найден, стрелки направлены обратно."""
+        code, out, _ = self.run_reverse("A", "graph_cycle.txt")
+        self.assertEqual(code, EXIT_OK)
+        self.assertEqual(out, (
+            "Обратные зависимости пакета A: 2\n"
+            "  C\n  B\n"
+            "Циклические зависимости: 1\n"
+            "  A <- C <- B <- A\n"
+        ))
+
+    def test_complex(self):
+        """Цикл между B и D и самозависимость E."""
+        _, out, _ = self.run_reverse("D", "graph_complex.txt")
+        self.assertIn("пакета D: 3", out)
+        self.assertIn("  D <- B <- D", out)
+        _, out, _ = self.run_reverse("E", "graph_complex.txt")
+        self.assertIn("  E <- E", out)
+
+    def test_package_not_in_file(self):
+        """Пакета нет в файле: ошибка."""
+        code, _, err = self.run_reverse("Z", "graph_simple.txt")
+        self.assertEqual(code, EXIT_ERROR)
+        self.assertIn("пакет 'Z' не найден", err)
+
+
 class TestModeTest(unittest.TestCase):
     """Проверки тестового режима (файл с графом)."""
 

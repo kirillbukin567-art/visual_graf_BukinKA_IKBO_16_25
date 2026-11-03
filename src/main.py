@@ -4,7 +4,7 @@ import sys
 
 from apk_repo import RepoError, get_graph
 from config import find_error, parse_args
-from graph import traverse
+from graph import reverse_graph, traverse
 from graph_file import read_graph_file
 
 EXIT_OK = 0
@@ -22,18 +22,24 @@ def load_graph(args):
     return graph
 
 
-def print_result(package, order, cycles):
-    """Печатает транзитивные зависимости пакета и найденные циклы."""
-    dependencies = order[1:]
-    print(f"Транзитивные зависимости пакета {package}: {len(dependencies)}")
-    for name in dependencies:
+def print_result(package, order, cycles, reverse):
+    """Печатает найденные пакеты и циклы.
+
+    В обычном режиме это зависимости пакета, в обратном — пакеты,
+    которые зависят от него.
+    """
+    title = "Обратные зависимости" if reverse else "Транзитивные зависимости"
+    arrow = " <- " if reverse else " -> "
+    packages = order[1:]
+    print(f"{title} пакета {package}: {len(packages)}")
+    for name in packages:
         print(f"  {name}")
     if not cycles:
         print("Циклические зависимости: нет")
         return
     print(f"Циклические зависимости: {len(cycles)}")
     for cycle in cycles:
-        print("  " + " -> ".join(cycle))
+        print("  " + arrow.join(cycle))
 
 
 def fail(message):
@@ -52,8 +58,10 @@ def main(argv=None):
         graph = load_graph(args)
     except RepoError as repo_error:
         return fail(repo_error)
+    if args.reverse:
+        graph = reverse_graph(graph)
     order, cycles = traverse(graph, args.package)
-    print_result(args.package, order, cycles)
+    print_result(args.package, order, cycles, args.reverse)
     return EXIT_OK
 
 

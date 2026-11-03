@@ -27,3 +27,15 @@ def traverse(graph, start):
             path.append(child)
             stack.append(iter(graph.get(child, [])))
     return order, cycles
+
+
+def reverse_graph(graph):
+    """Разворачивает рёбра графа: пакет -> пакеты, которые от него зависят.
+
+    Порядок пакетов в списках — как в исходном графе.
+    """
+    reversed_graph = {name: [] for name in graph}
+    for name, dependencies in graph.items():
+        for dependency in dependencies:
+            reversed_graph.setdefault(dependency, []).append(name)
+    return reversed_graph

@@ -30,12 +30,14 @@ class ParseArgsTest(unittest.TestCase):
         args = parse_args(["--package", "nginx", "--repo", URL])
         self.assertFalse(args.test_mode)
         self.assertFalse(args.ascii_tree)
+        self.assertFalse(args.reverse)
 
     def test_flags_on(self):
-        """Флаги --test-mode и --ascii-tree включаются."""
-        args = parse_args(["--test-mode", "--ascii-tree"])
+        """Флаги --test-mode, --ascii-tree и --reverse включаются."""
+        args = parse_args(["--test-mode", "--ascii-tree", "--reverse"])
         self.assertTrue(args.test_mode)
         self.assertTrue(args.ascii_tree)
+        self.assertTrue(args.reverse)
 
     def test_unknown_option(self):
         """Неизвестный параметр завершает программу с кодом 2."""
@@ -46,7 +48,7 @@ class ParseArgsTest(unittest.TestCase):
 
     def test_flag_with_value(self):
         """Флаги не принимают значений: --ascii-tree=yes это ошибка."""
-        for option in ("--ascii-tree=yes", "--test-mode=1"):
+        for option in ("--ascii-tree=yes", "--test-mode=1", "--reverse=1"):
             with redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit) as context:
                     parse_args([option])

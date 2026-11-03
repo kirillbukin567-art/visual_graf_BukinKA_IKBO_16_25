@@ -2,7 +2,7 @@
 
 import unittest
 
-from graph import traverse
+from graph import reverse_graph, traverse
 
 DEPTH = 3000
 
@@ -72,6 +72,45 @@ class TraverseTest(unittest.TestCase):
         graph = {"A": ["B"], "B": ["A"]}
         traverse(graph, "A")
         self.assertEqual(graph, {"A": ["B"], "B": ["A"]})
+
+
+class ReverseGraphTest(unittest.TestCase):
+    """Проверки функции reverse_graph."""
+
+    def test_edges_are_reversed(self):
+        """Рёбра разворачиваются, порядок как в исходном графе."""
+        graph = {"A": ["B", "C"], "B": ["D"], "C": ["D"], "D": []}
+        self.assertEqual(
+            reverse_graph(graph),
+            {"A": [], "B": ["A"], "C": ["A"], "D": ["B", "C"]},
+        )
+
+    def test_empty_graph(self):
+        """Пустой граф остаётся пустым."""
+        self.assertEqual(reverse_graph({}), {})
+
+    def test_node_only_in_dependencies(self):
+        """Пакет, которого нет среди ключей, всё равно попадает в граф."""
+        self.assertEqual(reverse_graph({"A": ["B"]}), {"A": [], "B": ["A"]})
+
+    def test_self_loop_and_cycle_are_kept(self):
+        """Самозависимость и цикл остаются после разворота."""
+        self.assertEqual(reverse_graph({"A": ["A"]}), {"A": ["A"]})
+        graph = {"A": ["B"], "B": ["A"]}
+        self.assertEqual(reverse_graph(graph), {"A": ["B"], "B": ["A"]})
+
+    def test_source_is_not_changed(self):
+        """Исходный граф не меняется."""
+        graph = {"A": ["B"], "B": []}
+        reverse_graph(graph)
+        self.assertEqual(graph, {"A": ["B"], "B": []})
+
+    def test_find_dependents_with_traverse(self):
+        """Обход обратного графа находит все пакеты, зависящие от D."""
+        graph = {"A": ["B"], "B": ["C"], "C": ["D"], "D": [], "X": []}
+        order, cycles = traverse(reverse_graph(graph), "D")
+        self.assertEqual(order, ["D", "C", "B", "A"])
+        self.assertEqual(cycles, [])
 
 
 if __name__ == "__main__":
