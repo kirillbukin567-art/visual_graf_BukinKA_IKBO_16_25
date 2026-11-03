@@ -82,8 +82,41 @@ def direct_dependencies(packages, name):
     return result
 
 
-def get_direct_dependencies(package, repo_url):
-    """Скачивает индекс репозитория и возвращает зависимости пакета."""
+def provider_map(packages):
+    """Возвращает словарь: предоставляемое имя -> имя реального пакета.
+
+    Своё имя пакета важнее имён из поля p (provides) других пакетов;
+    если имя предоставляют несколько пакетов, берётся первый в индексе.
+    """
+    providers = {name: name for name in packages}
+    for name, record in packages.items():
+        for token in record.get("p", "").split():
+            provided = dependency_name(token)
+            if provided:
+                providers.setdefault(provided, name)
+    return providers
+
+
+def package_graph(packages):
+    """Строит граф: имя пакета -> список пакетов, от которых он зависит.
+
+    Виртуальные зависимости (so:, cmd:, /bin/sh) заменяются реальными
+    пакетами через provides. Неразрешённые зависимости и зависимость
+    пакета от самого себя отбрасываются.
+    """
+    providers = provider_map(packages)
+    graph = {}
+    for name in packages:
+        resolved = []
+        for item in direct_dependencies(packages, name):
+            real = providers.get(item)
+            if real and real != name and real not in resolved:
+                resolved.append(real)
+        graph[name] = resolved
+    return graph
+
+
+def get_graph(repo_url):
+    """Скачивает индекс репозитория и строит граф зависимостей."""
     archive = download_index(repo_url)
-    packages = parse_index(unpack_index(archive))
-    return direct_dependencies(packages, package)
+    return package_graph(parse_index(unpack_index(archive)))

@@ -10,7 +10,8 @@ from unittest import mock
 
 from apk_repo import (
     RepoError, dependency_name, direct_dependencies, download_index,
-    get_direct_dependencies, parse_block, parse_index, unpack_index,
+    get_graph, package_graph, parse_block, parse_index, provider_map,
+    unpack_index,
 )
 
 INDEX_TEXT = """C:Q1AAA=
@@ -189,15 +190,59 @@ class DownloadIndexTest(unittest.TestCase):
                 download_index("https://h/repo")
 
 
-class GetDependenciesTest(unittest.TestCase):
-    """Проверка всей цепочки: скачать, распаковать, разобрать."""
+class ProviderMapTest(unittest.TestCase):
+    """Проверки словаря «предоставляемое имя -> пакет»."""
+
+    def test_names_and_provides(self):
+        """Имена пакетов и их provides указывают на пакет."""
+        providers = provider_map(parse_index(INDEX_TEXT))
+        self.assertEqual(providers["nginx"], "nginx")
+        self.assertEqual(providers["so:libc.musl-x86_64.so.1"], "musl")
+        self.assertEqual(providers["cmd:nginx"], "nginx")
+
+    def test_own_name_wins(self):
+        """Имя реального пакета важнее чужого provides."""
+        text = "P:a\np:b=1\n\nP:b\n"
+        self.assertEqual(provider_map(parse_index(text))["b"], "b")
+
+    def test_first_provider_wins(self):
+        """Если имя предоставляют несколько пакетов, берётся первый."""
+        text = "P:a\np:v\n\nP:b\np:v\n"
+        self.assertEqual(provider_map(parse_index(text))["v"], "a")
+
+
+class PackageGraphTest(unittest.TestCase):
+    """Проверки построения графа пакетов."""
+
+    def test_virtual_dependencies_are_resolved(self):
+        """so: и повторы заменяются реальными пакетами."""
+        graph = package_graph(parse_index(INDEX_TEXT))
+        self.assertEqual(graph["nginx"], ["musl", "pcre2"])
+        self.assertEqual(graph["musl"], [])
+        self.assertEqual(graph["pcre2"], [])
+
+    def test_self_dependency_is_dropped(self):
+        """Зависимость пакета от своего же provides отбрасывается."""
+        text = "P:a\np:so:a.1\nD:so:a.1 b\n\nP:b\n"
+        graph = package_graph(parse_index(text))
+        self.assertEqual(graph["a"], ["b"])
+
+    def test_cycle_is_kept(self):
+        """Цикл между пакетами сохраняется в графе."""
+        text = "P:a\nD:b\n\nP:b\nD:a\n"
+        graph = package_graph(parse_index(text))
+        self.assertEqual(graph, {"a": ["b"], "b": ["a"]})
+
+
+class GetGraphTest(unittest.TestCase):
+    """Проверка всей цепочки: скачать, распаковать, разобрать, построить."""
 
     def test_whole_chain(self):
-        """Зависимости пакета получаются из архива индекса."""
+        """Граф строится из архива индекса."""
         with mock.patch("apk_repo.download_index",
                         return_value=make_archive()):
-            result = get_direct_dependencies("nginx", "https://h/repo")
-        self.assertEqual(result[1], "pcre2")
+            graph = get_graph("https://h/repo")
+        self.assertEqual(graph["nginx"], ["musl", "pcre2"])
 
 
 if __name__ == "__main__":
