@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 PACKAGE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 URL_SCHEMES = ("http", "https")
+DEFAULT_OUTPUT_DIR = "output"
 
 
 def parse_args(argv=None):
@@ -32,6 +33,14 @@ def parse_args(argv=None):
     parser.add_argument(
         "--ascii-tree", action="store_true",
         help="вывести зависимости в формате ASCII-дерева",
+    )
+    parser.add_argument(
+        "--visualize", action="store_true",
+        help="построить диаграмму D2, нарисовать и показать изображение",
+    )
+    parser.add_argument(
+        "--output-dir", default=DEFAULT_OUTPUT_DIR,
+        help="каталог для файлов диаграммы (по умолчанию output)",
     )
     return parser.parse_args(argv)
 
@@ -78,9 +87,23 @@ def check_repo(repo, test_mode):
     return check_url(repo)
 
 
+def check_output_dir(path):
+    """Возвращает текст ошибки для каталога диаграммы или None."""
+    if not path.strip():
+        return "параметр --output-dir не может быть пустым"
+    if os.path.exists(path) and not os.path.isdir(path):
+        return f"'{path}' — не каталог, а файл"
+    return None
+
+
 def find_error(args):
     """Возвращает первую найденную ошибку в параметрах или None."""
     error = check_package(args.package)
     if error:
         return error
-    return check_repo(args.repo, args.test_mode)
+    error = check_repo(args.repo, args.test_mode)
+    if error:
+        return error
+    if args.visualize:
+        return check_output_dir(args.output_dir)
+    return None

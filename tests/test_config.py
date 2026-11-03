@@ -31,13 +31,18 @@ class ParseArgsTest(unittest.TestCase):
         self.assertFalse(args.test_mode)
         self.assertFalse(args.ascii_tree)
         self.assertFalse(args.reverse)
+        self.assertFalse(args.visualize)
+        self.assertEqual(args.output_dir, "output")
 
     def test_flags_on(self):
         """Флаги --test-mode, --ascii-tree и --reverse включаются."""
-        args = parse_args(["--test-mode", "--ascii-tree", "--reverse"])
+        args = parse_args(["--test-mode", "--ascii-tree", "--reverse",
+                           "--visualize", "--output-dir", "out"])
         self.assertTrue(args.test_mode)
         self.assertTrue(args.ascii_tree)
         self.assertTrue(args.reverse)
+        self.assertTrue(args.visualize)
+        self.assertEqual(args.output_dir, "out")
 
     def test_unknown_option(self):
         """Неизвестный параметр завершает программу с кодом 2."""
@@ -48,7 +53,8 @@ class ParseArgsTest(unittest.TestCase):
 
     def test_flag_with_value(self):
         """Флаги не принимают значений: --ascii-tree=yes это ошибка."""
-        for option in ("--ascii-tree=yes", "--test-mode=1", "--reverse=1"):
+        for option in ("--ascii-tree=yes", "--test-mode=1", "--reverse=1",
+                       "--visualize=1"):
             with redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit) as context:
                     parse_args([option])
@@ -137,6 +143,43 @@ class CheckRepoTest(unittest.TestCase):
         """В тестовом режиме URL не считается файлом."""
         error = check("--package", "A", "--repo", URL, "--test-mode")
         self.assertIn("не найден", error)
+
+
+class CheckOutputDirTest(unittest.TestCase):
+    """Проверки каталога для диаграммы (--output-dir)."""
+
+    def test_default_is_fine(self):
+        """С --visualize и каталогом по умолчанию ошибок нет."""
+        self.assertEqual(
+            check("--package", "a", "--repo", URL, "--visualize"), ""
+        )
+
+    def test_not_checked_without_visualize(self):
+        """Без --visualize каталог не проверяется."""
+        error = check("--package", "a", "--repo", URL,
+                      "--output-dir", "")
+        self.assertEqual(error, "")
+
+    def test_empty(self):
+        """Пустой --output-dir недопустим."""
+        error = check("--package", "a", "--repo", URL, "--visualize",
+                      "--output-dir", " ")
+        self.assertIn("пустым", error)
+
+    def test_existing_directory(self):
+        """Существующий каталог допустим."""
+        error = check("--package", "a", "--repo", URL, "--visualize",
+                      "--output-dir", tempfile.gettempdir())
+        self.assertEqual(error, "")
+
+    def test_path_is_file(self):
+        """Если по пути лежит файл, это ошибка."""
+        handle, path = tempfile.mkstemp()
+        os.close(handle)
+        self.addCleanup(os.remove, path)
+        error = check("--package", "a", "--repo", URL, "--visualize",
+                      "--output-dir", path)
+        self.assertIn("не каталог", error)
 
 
 if __name__ == "__main__":

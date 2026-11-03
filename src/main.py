@@ -3,7 +3,9 @@
 import sys
 
 from apk_repo import RepoError, get_graph
+from ascii_tree import ascii_tree
 from config import find_error, parse_args
+from d2_diagram import DiagramError, build_d2, draw, edges_between
 from graph import reverse_graph, traverse
 from graph_file import read_graph_file
 
@@ -22,18 +24,18 @@ def load_graph(args):
     return graph
 
 
-def print_result(package, order, cycles, reverse):
-    """Печатает найденные пакеты и циклы.
+def print_result(package, order, cycles, reverse, tree=None):
+    """Печатает найденные пакеты (списком или деревом) и циклы.
 
     В обычном режиме это зависимости пакета, в обратном — пакеты,
-    которые зависят от него.
+    которые зависят от него. Если передано дерево, оно заменяет список.
     """
     title = "Обратные зависимости" if reverse else "Транзитивные зависимости"
     arrow = " <- " if reverse else " -> "
     packages = order[1:]
     print(f"{title} пакета {package}: {len(packages)}")
-    for name in packages:
-        print(f"  {name}")
+    for line in tree or [f"  {name}" for name in packages]:
+        print(line)
     if not cycles:
         print("Циклические зависимости: нет")
         return
@@ -42,10 +44,31 @@ def print_result(package, order, cycles, reverse):
         print("  " + arrow.join(cycle))
 
 
+def visualize(args, graph, order):
+    """Печатает D2-текст, рисует диаграмму и показывает изображение."""
+    edges = edges_between(graph, order)
+    text = build_d2(args.package, order, edges)
+    print("D2-диаграмма:")
+    print(text, end="")
+    name = args.package + ("_reverse" if args.reverse else "")
+    d2_path, svg_path = draw(text, args.output_dir, name)
+    print(f"Файлы диаграммы: {d2_path}, {svg_path}")
+
+
 def fail(message):
     """Печатает сообщение об ошибке и возвращает код ошибки."""
     print(f"Ошибка: {message}", file=sys.stderr)
     return EXIT_ERROR
+
+
+def use_utf8_output():
+    """Включает вывод в UTF-8, чтобы дерево и русский текст не терялись
+    при перенаправлении вывода в файл.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(encoding="utf-8")
 
 
 def main(argv=None):
@@ -58,12 +81,18 @@ def main(argv=None):
         graph = load_graph(args)
     except RepoError as repo_error:
         return fail(repo_error)
-    if args.reverse:
-        graph = reverse_graph(graph)
-    order, cycles = traverse(graph, args.package)
-    print_result(args.package, order, cycles, args.reverse)
+    walk = reverse_graph(graph) if args.reverse else graph
+    order, cycles = traverse(walk, args.package)
+    tree = ascii_tree(walk, args.package) if args.ascii_tree else None
+    print_result(args.package, order, cycles, args.reverse, tree)
+    if args.visualize:
+        try:
+            visualize(args, graph, order)
+        except DiagramError as diagram_error:
+            return fail(diagram_error)
     return EXIT_OK
 
 
 if __name__ == "__main__":
+    use_utf8_output()
     sys.exit(main())

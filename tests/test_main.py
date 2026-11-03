@@ -8,7 +8,8 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 from apk_repo import RepoError
-from main import EXIT_ERROR, EXIT_OK, main
+from d2_diagram import DiagramError
+from main import EXIT_ERROR, EXIT_OK, main, use_utf8_output
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 URL = "https://dl-cdn.alpinelinux.org/alpine/v3.20/main/x86_64"
@@ -32,6 +33,18 @@ def run_main(argv, graph=None, repo_error=None):
         with redirect_stdout(out), redirect_stderr(err):
             code = main(argv)
     return code, out.getvalue(), err.getvalue()
+
+
+class Utf8OutputTest(unittest.TestCase):
+    """Проверка переключения вывода в UTF-8."""
+
+    def test_streams_are_reconfigured(self):
+        """stdout и stderr переключаются на UTF-8."""
+        out, err = mock.Mock(), mock.Mock()
+        with mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            use_utf8_output()
+        out.reconfigure.assert_called_once_with(encoding="utf-8")
+        err.reconfigure.assert_called_once_with(encoding="utf-8")
 
 
 class RealModeTest(unittest.TestCase):
@@ -130,6 +143,111 @@ class ReverseModeTest(unittest.TestCase):
         code, _, err = self.run_reverse("Z", "graph_simple.txt")
         self.assertEqual(code, EXIT_ERROR)
         self.assertIn("пакет 'Z' не найден", err)
+
+
+class AsciiTreeModeTest(unittest.TestCase):
+    """Проверки вывода ASCII-дерева (--ascii-tree)."""
+
+    def run_tree(self, package, filename, *extra):
+        """Запускает main с --ascii-tree в тестовом режиме."""
+        argv = ["--package", package, "--repo", data_file(filename),
+                "--test-mode", "--ascii-tree", *extra]
+        return run_main(argv)
+
+    def test_tree_replaces_list(self):
+        """Дерево выводится вместо плоского списка."""
+        code, out, _ = self.run_tree("A", "graph_simple.txt")
+        self.assertEqual(code, EXIT_OK)
+        self.assertEqual(out, (
+            "Транзитивные зависимости пакета A: 3\n"
+            "A\n├── B\n│   └── D\n└── C\n    └── D\n"
+            "Циклические зависимости: нет\n"
+        ))
+
+    def test_tree_with_cycles(self):
+        """В дереве циклы помечены, список циклов выводится."""
+        _, out, _ = self.run_tree("A", "graph_complex.txt")
+        self.assertIn("│       ├── B (цикл)", out)
+        self.assertIn("        └── E (цикл)", out)
+        self.assertIn("  E -> E", out)
+
+    def test_reverse_tree(self):
+        """Вместе с --reverse строится дерево обратных зависимостей."""
+        _, out, _ = self.run_tree("A", "graph_cycle.txt", "--reverse")
+        self.assertIn("Обратные зависимости пакета A: 2", out)
+        self.assertIn("        └── A (цикл)", out)
+
+    def test_real_mode_tree(self):
+        """В режиме Alpine дерево строится по графу репозитория."""
+        argv = ["--package", "nginx", "--repo", URL, "--ascii-tree"]
+        _, out, _ = run_main(argv, graph=GRAPH)
+        self.assertIn("nginx\n├── pcre2\n│   └── musl\n└── musl", out)
+
+
+class VisualizeModeTest(unittest.TestCase):
+    """Проверки режима диаграммы (--visualize)."""
+
+    def run_visualize(self, package, *extra, draw_error=None):
+        """Запускает main с --visualize, не трогая диск и браузер."""
+        argv = ["--package", package, "--repo", data_file("graph_complex.txt"),
+                "--test-mode", "--visualize", *extra]
+        fake = mock.Mock(return_value=("o/A.d2", "o/A.svg"),
+                         side_effect=draw_error)
+        with mock.patch("main.draw", fake):
+            result = run_main(argv)
+        return result, fake
+
+    def test_prints_d2_and_draws(self):
+        """Выводится D2-текст, вызывается рисование, код 0."""
+        (code, out, _), fake = self.run_visualize("A")
+        self.assertEqual(code, EXIT_OK)
+        self.assertIn("D2-диаграмма:", out)
+        self.assertIn('"A" -> "B"', out)
+        self.assertIn('"E" -> "E"', out)
+        self.assertIn("Файлы диаграммы: o/A.d2, o/A.svg", out)
+        text, directory, name = fake.call_args[0]
+        self.assertIn('"D" -> "B"', text)
+        self.assertEqual((directory, name), ("output", "A"))
+
+    def test_output_dir_is_passed(self):
+        """Каталог из --output-dir передаётся в draw."""
+        _, fake = self.run_visualize("A", "--output-dir", "pics")
+        self.assertEqual(fake.call_args[0][1], "pics")
+
+    def test_reverse_file_name(self):
+        """В обратном режиме к имени файла добавляется _reverse."""
+        _, fake = self.run_visualize("D", "--reverse")
+        self.assertEqual(fake.call_args[0][2], "D_reverse")
+
+    def test_reverse_edges_keep_direction(self):
+        """В обратном режиме стрелки остаются «зависит от»."""
+        (_, out, _), _ = self.run_visualize("F", "--reverse")
+        self.assertIn('"D" -> "F"', out)
+        self.assertNotIn('"F" -> "D"', out)
+
+    def test_diagram_error(self):
+        """Ошибка диаграммы: сообщение в stderr и код 1."""
+        error = DiagramError("программа d2 не найдена")
+        (code, _, err), _ = self.run_visualize("A", draw_error=error)
+        self.assertEqual(code, EXIT_ERROR)
+        self.assertIn("Ошибка: программа d2 не найдена", err)
+
+    def test_bad_output_dir(self):
+        """Файл вместо каталога: ошибка параметра, draw не вызывается."""
+        (code, _, err), fake = self.run_visualize(
+            "A", "--output-dir", data_file("graph_simple.txt"))
+        self.assertEqual(code, EXIT_ERROR)
+        self.assertIn("не каталог", err)
+        fake.assert_not_called()
+
+    def test_without_flag_no_drawing(self):
+        """Без --visualize диаграмма не строится."""
+        argv = ["--package", "A", "--repo", data_file("graph_simple.txt"),
+                "--test-mode"]
+        with mock.patch("main.draw") as fake:
+            _, out, _ = run_main(argv)
+        fake.assert_not_called()
+        self.assertNotIn("D2", out)
 
 
 class TestModeTest(unittest.TestCase):
