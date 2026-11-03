@@ -1,4 +1,4 @@
-"""Параметры командной строки: разбор, проверка и вывод."""
+"""Параметры командной строки: разбор и проверка."""
 
 import argparse
 import os
@@ -80,12 +80,3 @@ def find_error(args):
     if error:
         return error
     return check_repo(args.repo, args.test_mode)
-
-
-def print_args(args):
-    """Печатает все параметры запуска в формате ключ-значение."""
-    print("Параметры запуска:")
-    print(f"  package    = {args.package}")
-    print(f"  repo       = {args.repo}")
-    print(f"  test_mode  = {args.test_mode}")
-    print(f"  ascii_tree = {args.ascii_tree}")

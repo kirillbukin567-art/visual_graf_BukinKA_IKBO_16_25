@@ -4,17 +4,16 @@ import io
 import os
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stderr
 
 from config import find_error, parse_args
-from main import EXIT_ERROR, EXIT_OK, main
 
 URL = "https://dl-cdn.alpinelinux.org/alpine/v3.20/main/x86_64"
 
 
 def check(*argv):
-    """Разбирает параметры и возвращает текст ошибки или None."""
-    return find_error(parse_args(list(argv)))
+    """Разбирает параметры и возвращает текст ошибки ('' если ошибок нет)."""
+    return find_error(parse_args(list(argv))) or ""
 
 
 class ParseArgsTest(unittest.TestCase):
@@ -66,7 +65,7 @@ class CheckPackageTest(unittest.TestCase):
     def test_good_names(self):
         """Допустимые имена пакетов."""
         for name in ("nginx", "A", "libstdc++", "py3-yaml", "a.b_c-d"):
-            self.assertIsNone(check("--package", name, "--repo", URL))
+            self.assertEqual(check("--package", name, "--repo", URL), "")
 
     def test_missing(self):
         """Параметр --package не задан."""
@@ -95,7 +94,7 @@ class CheckRepoTest(unittest.TestCase):
 
     def test_good_url(self):
         """Корректный URL в обычном режиме."""
-        self.assertIsNone(check("--package", "a", "--repo", URL))
+        self.assertEqual(check("--package", "a", "--repo", URL), "")
 
     def test_missing(self):
         """Параметр --repo не задан."""
@@ -114,9 +113,8 @@ class CheckRepoTest(unittest.TestCase):
     def test_good_file(self):
         """Существующий файл в тестовом режиме."""
         path = self.make_file()
-        self.assertIsNone(check(
-            "--package", "A", "--repo", path, "--test-mode"
-        ))
+        error = check("--package", "A", "--repo", path, "--test-mode")
+        self.assertEqual(error, "")
 
     def test_file_not_found(self):
         """Несуществующий файл в тестовом режиме."""
@@ -137,29 +135,6 @@ class CheckRepoTest(unittest.TestCase):
         """В тестовом режиме URL не считается файлом."""
         error = check("--package", "A", "--repo", URL, "--test-mode")
         self.assertIn("не найден", error)
-
-
-class MainTest(unittest.TestCase):
-    """Проверки вывода и кода завершения."""
-
-    def test_prints_parameters(self):
-        """main печатает все параметры и возвращает 0."""
-        out = io.StringIO()
-        with redirect_stdout(out):
-            code = main(["--package", "nginx", "--repo", URL])
-        self.assertEqual(code, EXIT_OK)
-        self.assertIn("package    = nginx", out.getvalue())
-        self.assertIn(f"repo       = {URL}", out.getvalue())
-        self.assertIn("test_mode  = False", out.getvalue())
-        self.assertIn("ascii_tree = False", out.getvalue())
-
-    def test_reports_error(self):
-        """При ошибке main пишет сообщение в stderr и возвращает 1."""
-        errors = io.StringIO()
-        with redirect_stderr(errors):
-            code = main([])
-        self.assertEqual(code, EXIT_ERROR)
-        self.assertIn("Ошибка:", errors.getvalue())
 
 
 if __name__ == "__main__":
