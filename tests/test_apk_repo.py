@@ -138,25 +138,24 @@ class DependencyNameTest(unittest.TestCase):
 class DirectDependenciesTest(unittest.TestCase):
     """Проверки получения прямых зависимостей."""
 
-    def setUp(self):
-        """Разбирает тестовый индекс."""
-        self.packages = parse_index(INDEX_TEXT)
-
     def test_dependencies(self):
         """Зависимости очищены, без запретов и повторов, в порядке индекса."""
-        result = direct_dependencies(self.packages, "nginx")
+        packages = parse_index(INDEX_TEXT)
+        result = direct_dependencies(packages, "nginx")
         self.assertEqual(result, ["so:libc.musl-x86_64.so.1", "pcre2",
                                   "/bin/sh"])
 
     def test_no_dependencies(self):
         """Пакет без зависимостей даёт пустой список."""
-        self.assertEqual(direct_dependencies(self.packages, "musl"), [])
-        self.assertEqual(direct_dependencies(self.packages, "pcre2"), [])
+        packages = parse_index(INDEX_TEXT)
+        self.assertEqual(direct_dependencies(packages, "musl"), [])
+        self.assertEqual(direct_dependencies(packages, "pcre2"), [])
 
     def test_package_not_found(self):
         """Неизвестный пакет вызывает RepoError."""
+        packages = parse_index(INDEX_TEXT)
         with self.assertRaisesRegex(RepoError, "не найден"):
-            direct_dependencies(self.packages, "nope")
+            direct_dependencies(packages, "nope")
 
 
 class DownloadIndexTest(unittest.TestCase):
